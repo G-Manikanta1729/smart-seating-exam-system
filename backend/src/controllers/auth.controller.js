@@ -70,15 +70,15 @@ export const login = (req, res) => {
       }
 
       const token = jwt.sign(
-        { id: user.id, role: user.role },
+        { id: user.id, role: user.role.toUpperCase() },
         process.env.JWT_SECRET,
         { expiresIn: "1d" }
       );
 
-      //res.json({ token, role: user.role });
+      
       res.json({
         token,
-        id: user.id, 
+        id: user.id,
         role: user.role.toUpperCase(),
         name: user.name,
         email: user.email
