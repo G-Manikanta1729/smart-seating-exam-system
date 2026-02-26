@@ -51,7 +51,7 @@ export function FacultyLayout() {
 
             {/* Faculty Info */}
             <div className="leading-tight">
-              <p className="text-sm font-semibold">Faculty</p>
+              <p className="text-sm font-semibold">{name}</p>
               <p className="text-xs opacity-80">{email}</p>
             </div>
 
