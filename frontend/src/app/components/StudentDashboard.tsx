@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import api from "../../api/api";
 import axios from "axios";
 import {
   Calendar,
@@ -62,8 +63,8 @@ const StudentDashboard = () => {
           return;
         }
 
-        const res = await axios.get(
-          "http://localhost:5000/api/student/dashboard",
+        const res = await api.get(
+          "/student/dashboard",
           {
             headers: { Authorization: `Bearer ${token}` },
           }
