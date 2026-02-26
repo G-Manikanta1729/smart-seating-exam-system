@@ -24,15 +24,15 @@ const app = express();
 
 app.use(
   cors({
-    origin: [
-      "https://smart-exam-seating-and-attendance-m.vercel.app",
-    ],
-    methods: ["GET", "POST", "PUT", "DELETE"],
-    credentials: true,
+    origin: "https://smart-exam-seating-and-attendance-m.vercel.app",
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
-app.use(express.json());
 
+app.options("*", cors());
+
+app.use(express.json());
 // Routes
 app.use("/api/auth", authRoutes);
 app.use("/api/admin", adminRoutes);
