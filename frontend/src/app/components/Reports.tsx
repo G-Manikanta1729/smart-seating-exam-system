@@ -37,36 +37,36 @@ export function Reports() {
   };
 
   const downloadReport = (
-    reportType: string,
-    format: "pdf" | "excel"
-  ) => {
-    const token = localStorage.getItem("token") || "";
+  reportType: string,
+  format: "pdf" | "excel"
+) => {
+  const token = localStorage.getItem("token") || "";
 
-    const params = new URLSearchParams({
-      reportType: reportType === "ALL" ? "" : reportType,
-      examId: selectedExam || "",
-      dateRange: selectedDateRange,
-      format,
-      token,
-    });
+  const params = new URLSearchParams({
+    reportType: reportType === "ALL" ? "" : reportType,
+    examId: selectedExam || "",
+    dateRange: selectedDateRange,
+    format,
+    token,
+  });
 
-    const url = `http://localhost:5000/api/reports/download?${params.toString()}`;
-    window.open(url, "_blank");
-  };
+  const url = `${api.defaults.baseURL}/reports/download?${params.toString()}`;
+  window.open(url, "_blank");
+};
 
   const printReport = (reportType: string) => {
-    const token = localStorage.getItem("token") || "";
+  const token = localStorage.getItem("token") || "";
 
-    const params = new URLSearchParams({
-      reportType: reportType === "ALL" ? "" : reportType,
-      examId: selectedExam || "",
-      dateRange: selectedDateRange,
-      token,
-    });
+  const params = new URLSearchParams({
+    reportType: reportType === "ALL" ? "" : reportType,
+    examId: selectedExam || "",
+    dateRange: selectedDateRange,
+    token,
+  });
 
-    const url = `http://localhost:5000/api/reports/print?${params.toString()}`;
-    window.open(url, "_blank");
-  };
+  const url = `${api.defaults.baseURL}/reports/print?${params.toString()}`;
+  window.open(url, "_blank");
+};
 
   const reports = [
     {
