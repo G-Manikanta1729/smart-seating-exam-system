@@ -22,7 +22,15 @@ dotenv.config();
 const app = express();
 /*const reportRoutes = require("./routes/report.routes");*/
 
-app.use(cors());
+app.use(
+  cors({
+    origin: [
+      "https://smart-exam-seating-and-attendance-m.vercel.app",
+    ],
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    credentials: true,
+  })
+);
 app.use(express.json());
 
 // Routes

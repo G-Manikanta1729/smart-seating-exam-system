@@ -95,7 +95,7 @@ CREATE TABLE IF NOT EXISTS rooms (
   room_name VARCHAR(50) NOT NULL,
   rows_count INT NOT NULL,
   cols_count INT NOT NULL,
-  capacity INT,
+  capacity INT GENERATED ALWAYS AS (rows_count * cols_count) STORED,
   is_active TINYINT(1) DEFAULT 1,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
