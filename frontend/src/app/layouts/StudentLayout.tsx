@@ -1,6 +1,6 @@
 import { Outlet, useLocation } from "react-router-dom";
 import { useEffect, useState } from "react";
-import axios from "axios";
+import api from "../../api/api";
 import { Sidebar } from "../components/Sidebar";
 import { LayoutDashboard, FileText, LogOut } from "lucide-react";
 
@@ -31,8 +31,8 @@ export default function StudentLayout() {
         const token = localStorage.getItem("token");
         if (!token) return;
 
-        const res = await axios.get(
-          "http://localhost:5000/api/student/dashboard",
+        const res = await api.get(
+          "/student/dashboard",
           {
             headers: {
               Authorization: `Bearer ${token}`,
