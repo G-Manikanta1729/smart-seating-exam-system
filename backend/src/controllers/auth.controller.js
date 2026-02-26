@@ -78,7 +78,8 @@ export const login = (req, res) => {
       //res.json({ token, role: user.role });
       res.json({
         token,
-        role: user.role,
+        id: user.id, 
+        role: user.role.toUpperCase(),
         name: user.name,
         email: user.email
       });
