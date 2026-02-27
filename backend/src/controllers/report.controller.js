@@ -151,7 +151,7 @@ const generateExcelReport = (res, examId, reportType, startDate) => {
         e.exam_name, 
         e.exam_date,
         r.room_name, 
-        r.capacity,
+        (r.rows_count * r.cols_count) AS capacity,
         COUNT(sa.id) AS students_allocated
       FROM seating_arrangements sa
       JOIN rooms r ON r.id = sa.room_id

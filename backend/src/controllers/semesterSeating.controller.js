@@ -155,7 +155,7 @@ export const generateSemesterSeating = (req, res) => {
             return res.status(404).json({ message: "Slot not found" });
 
           db.query(
-            `SELECT id, room_name, capacity
+            `SELECT id, room_name, rows_count, cols_count
              FROM rooms
              WHERE id IN (?) AND is_active=1`,
             [room_ids],
@@ -180,8 +180,9 @@ export const generateSemesterSeating = (req, res) => {
                   let branchIndex = 0;
 
                   rooms.forEach(room => {
+                    const roomCapacity = room.rows_count * room.cols_count;
                     let seat = 1;
-                    while (seat <= room.capacity) {
+                    while (seat <= roomCapacity) {
                       let assigned = false;
                       for (let i = 0; i < BRANCH_ORDER.length; i++) {
                         const b = BRANCH_ORDER[branchIndex++ % BRANCH_ORDER.length];
@@ -232,7 +233,7 @@ export const viewSemesterSeating = (req, res) => {
     SELECT
   r.id AS room_id,
   r.room_name,
-  r.capacity,
+  (r.rows_count * r.cols_count) AS capacity,
   s.seat_number,
   u.roll_number,
   u.name,
@@ -284,7 +285,7 @@ export const downloadSemesterSeatingPDF = (req, res) => {
       SELECT 
   r.id AS room_id,
   r.room_name,
-  r.capacity,
+  (r.rows_count * r.cols_count) AS capacity,
   u_fac.name AS faculty_name,
   u_fac.email AS faculty_email,
   s.seat_number,
@@ -343,7 +344,7 @@ ORDER BY r.room_name, s.seat_number
         if (!roomStats[r.room_id]) {
           roomStats[r.room_id] = {
             room_name: r.room_name,
-            capacity: r.capacity,
+            capacity: r.rows_count * r.cols_count,
             allocated: r.room_allocation,
           };
         }
