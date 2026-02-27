@@ -12,7 +12,7 @@ export const getRooms = (req, res) => {
       room_name,
       rows_count,
       cols_count,
-      capacity,
+      (rows_count * cols_count) AS capacity,
       is_active
     FROM rooms
     ORDER BY id DESC

@@ -127,14 +127,30 @@ export function RegisterPage() {
             </div>
 
             {(role === "STUDENT" || role === "FACULTY") && (
-              <Input
-                label="Branch"
-                type="text"
-                value={branch}
-                onChange={(e) => setBranch(e.target.value)}
-                required={role === "STUDENT" || role === "FACULTY"}
-              />
-            )}
+  <div>
+    <label className="block text-sm font-medium text-gray-700 mb-1">
+      Branch
+    </label>
+
+    <select
+      value={branch}
+      onChange={(e) => setBranch(e.target.value)}
+      required
+      className="w-full border border-gray-300 rounded-lg px-4 py-2 
+                 focus:outline-none focus:ring-2 focus:ring-blue-500"
+    >
+      <option value="">Select Branch</option>
+      <option value="CSE">CSE</option>
+      <option value="IT">IT</option>
+      <option value="CSD">CSD</option>
+      <option value="CSM">CSM</option>
+      <option value="ECE">ECE</option>
+      <option value="EEE">EEE</option>
+      <option value="MECH">MECH</option>
+      <option value="CIVIL">CIVIL</option>
+    </select>
+  </div>
+)}
 
             {role === "STUDENT" && (
               <>
@@ -146,15 +162,25 @@ export function RegisterPage() {
                   required
                 />
 
-                <Input
-                  label="Year"
-                  type="number"
-                  value={year}
-                  onChange={(e) => setYear(e.target.value)}
-                  min={1}
-                  max={4}
-                  required
-                />
+                <div>
+  <label className="block text-sm font-medium text-gray-700 mb-1">
+    Year
+  </label>
+
+  <select
+    value={year}
+    onChange={(e) => setYear(e.target.value)}
+    required
+    className="w-full border border-gray-300 rounded-lg px-4 py-2 
+               focus:outline-none focus:ring-2 focus:ring-blue-500"
+  >
+    <option value="">Select Year</option>
+    <option value="1st Year">1st Year</option>
+    <option value="2nd Year">2nd Year</option>
+    <option value="3rd Year">3rd Year</option>
+    <option value="4th Year">4th Year</option>
+  </select>
+</div>
               </>
             )}
 
