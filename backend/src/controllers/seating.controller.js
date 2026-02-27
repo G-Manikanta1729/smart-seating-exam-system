@@ -7,13 +7,13 @@ import { autoAllocateFaculty } from "./faculty.controller.js";
 export const generateSeating = (req, res) => {
   const { examId } = req.params;
 
-  // 1️⃣ Delete old seating
+  //  Delete old seating
   db.query(
     "DELETE FROM seating_arrangements WHERE exam_id=?",
     [examId],
     () => {
 
-      // 2️⃣ Get exam
+      //  Get exam
       db.query(
         "SELECT * FROM exams WHERE id=? AND is_active=1",
         [examId],
@@ -23,7 +23,7 @@ export const generateSeating = (req, res) => {
 
           const exam = exams[0];
 
-          // 3️⃣ Get students
+          //  Get students
           db.query(
             `
             SELECT id, roll_number, name
@@ -39,7 +39,7 @@ export const generateSeating = (req, res) => {
               if (err || students.length === 0)
                 return res.status(400).json({ message: "No students found" });
 
-              // 4️⃣ Get rooms
+              //  Get rooms
               db.query(
                 "SELECT * FROM rooms WHERE is_active=1 ORDER BY id",
                 (err, rooms) => {
@@ -49,9 +49,10 @@ export const generateSeating = (req, res) => {
                   let index = 0;
                   const values = [];
 
-                  // 5️⃣ Seat allocation
+                  // Seat allocation
                   rooms.forEach(room => {
-                    for (let i = 1; i <= room.capacity; i++) {
+                    const roomCapacity = room.rows_count * room.cols_count;
+                    for (let i = 1; i <= roomCapacity; i++) {
                       if (index >= students.length) break;
 
                       const student = students[index];
@@ -72,7 +73,7 @@ export const generateSeating = (req, res) => {
                   if (values.length === 0)
                     return res.status(400).json({ message: "Insufficient capacity" });
 
-                  // 6️⃣ Insert seating
+                  //  Insert seating
                   db.query(
                     `
                     INSERT INTO seating_arrangements
@@ -86,7 +87,7 @@ export const generateSeating = (req, res) => {
                         return res.status(500).json({ message: "Insert failed" });
                       }
 
-                      // 7️⃣ Mark seating generated
+                      //  Mark seating generated
                       db.query(
                         "UPDATE exams SET seating_generated=1 WHERE id=?",
                         [examId]
