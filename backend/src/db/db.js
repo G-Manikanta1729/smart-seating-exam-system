@@ -21,13 +21,9 @@ CREATE TABLE IF NOT EXISTS users (
   year VARCHAR(20),
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-`, (err) => {
-  if (err) {
-    console.error("Error creating users table:", err);
-  } else {
-    console.log("Users table ready");
-  }
-});
+`)
+.then(() => console.log("Users table ready"))
+.catch((err) => console.error("Error creating users table:", err));
 
 /* ================= ATTENDANCE ================= */
 
@@ -43,10 +39,9 @@ CREATE TABLE IF NOT EXISTS attendance (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-`, (err) => {
-  if (err) console.error("Error creating attendance table:", err);
-  else console.log("Attendance table ready");
-});
+`)
+.then(() => console.log("Attendance table ready"))
+.catch((err) => console.error("Error creating attendance table:", err));
 
 /* ================= EXAMS ================= */
 db.query(`
@@ -62,10 +57,9 @@ CREATE TABLE IF NOT EXISTS exams (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   seating_generated BOOLEAN DEFAULT FALSE
 );
-`, (err) => {
-  if (err) console.error("Error creating exams table:", err);
-  else console.log("Exams table ready");
-});
+`)
+.then(() => console.log("Exams table ready"))
+.catch((err) => console.error("Error creating exams table:", err));
 
 /* ================= FACULTY ALLOCATION ================= */
 db.query(`
@@ -79,10 +73,9 @@ CREATE TABLE IF NOT EXISTS faculty_allocation (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-`, (err) => {
-  if (err) console.error("Error creating faculty allocation table:", err);
-  else console.log("Faculty allocation table ready");
-});
+`)
+.then(() => console.log("Faculty Allocation table ready"))
+.catch((err) => console.error("Error creating faculty allocation table:", err));
 
 /* ================= REPORTS ================= */
 
@@ -97,10 +90,9 @@ CREATE TABLE IF NOT EXISTS reports (
   format VARCHAR(10) CHECK (format IN ('PDF','EXCEL','PRINT')) NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-`, (err) => {
-  if (err) console.error("Error creating reports table:", err);
-  else console.log("Reports table ready");
-});
+`)
+.then(() => console.log("Reports table ready"))
+.catch((err) => console.error("Error creating reports table:", err));
 
 /* ================= ROOMS ================= */
 
@@ -114,10 +106,9 @@ CREATE TABLE IF NOT EXISTS rooms (
   is_active BOOLEAN DEFAULT TRUE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-`, (err) => {
-  if (err) console.error("Error creating rooms table:", err);
-  else console.log("Rooms table ready");
-});
+`)
+.then(() => console.log("Rooms table ready"))
+.catch((err) => console.error("Error creating rooms table:", err));
 
 /* ================= SEATING ARRANGEMENTS ================= */
 db.query(`
@@ -131,10 +122,9 @@ CREATE TABLE IF NOT EXISTS seating_arrangements (
   is_deleted INT DEFAULT 0,
   seat_number INT
 );
-`, (err) => {
-  if (err) console.error("Error creating seating arrangements table:", err);
-  else console.log("Seating arrangements table ready");
-});
+`)
+.then(() => console.log("Seating Arrangements table ready"))
+.catch((err) => console.error("Error creating seating arrangements table:", err));
 
 /* ================= SEMESTER EXAM SLOTS ================= */
 db.query(`
@@ -146,10 +136,9 @@ CREATE TABLE IF NOT EXISTS semester_exam_slots (
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   semester_slot_id INT
 );
-`, (err) => {
-  if (err) console.error("Error creating semester exam slots table:", err);
-  else console.log("Semester exam slots table ready");
-});
+`)
+.then(() => console.log("Semester exam slots table ready"))
+.catch((err) => console.error("Error creating semester exam slots table:", err));
 
 /* ================= SEMESTER FACULTY ALLOCATION ================= */
 db.query(`
@@ -162,10 +151,9 @@ CREATE TABLE IF NOT EXISTS semester_faculty_allocation (
   status VARCHAR(20) DEFAULT 'Assigned',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-`, (err) => {
-  if (err) console.error("Error creating semester faculty allocation table:", err);
-  else console.log("Semester faculty allocation table ready");
-});
+`)
+.then(() => console.log("Semester faculty allocation table ready"))
+.catch((err) => console.error("Error creating semester faculty allocation table:", err));
 
 /* ================= SEMESTER SEATING ARRANGEMENTS ================= */
 db.query(`
@@ -177,9 +165,8 @@ CREATE TABLE IF NOT EXISTS semester_seating_arrangements (
   student_id INT NOT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-`, (err) => {
-  if (err) console.error("Error creating semester seating arrangements table:", err);
-  else console.log("Semester seating arrangements table ready");
-});
+`)
+.then(() => console.log("semester seating arrangements table ready"))
+.catch((err) => console.error("Error creating seating arrangements table:", err));
 
 export default db;
