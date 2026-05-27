@@ -23,14 +23,14 @@ export const register = async (req, res) => {
 
     try {
   await db.query(sql, [
-    name,
-    email,
-    hashedPassword,
-    role,
-    roll_number,
-    branch,
-    year
-  ]);
+  name,
+  email,
+ hashedPassword,
+  role.toLowerCase(),
+  roll_number,
+  branch.toUpperCase(),
+  year
+]);
 
   res.status(201).json({
     message: "User registered successfully"
