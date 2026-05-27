@@ -18,7 +18,7 @@ export const register = async (req, res) => {
     const sql = `
       INSERT INTO users
       (name, email, password, role, roll_number, branch, year)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+      VALUES ($1, $2, $3, $4, $5, $6, $7)
     `;
 
     db.query(
@@ -26,7 +26,7 @@ export const register = async (req, res) => {
       [name, email, hashedPassword, role, roll_number, branch, year],
       (err) => {
         if (err) {
-          if (err.code === "ER_DUP_ENTRY") {
+          if (err.code === "23505") {
             return res.status(409).json({ message: "Email already exists" });
           }
           return res.status(500).json({ message: "Database error" });
@@ -51,7 +51,7 @@ export const login = (req, res) => {
   }
 
   db.query(
-    "SELECT * FROM users WHERE email = ? AND is_active = 1",
+    "SELECT * FROM users WHERE email = $1 AND is_active = true",
     [email],
     async (err, results) => {
       if (err) {
