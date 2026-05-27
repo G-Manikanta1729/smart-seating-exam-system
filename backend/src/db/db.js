@@ -1,5 +1,5 @@
-import pg from 'pg';
-const { Pool } = pg;
+import pkg from 'pg';
+const { Pool } = pkg;
 
 const db = new Pool({
   connectionString: process.env.MYSQL_URL,
