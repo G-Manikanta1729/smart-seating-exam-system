@@ -25,11 +25,11 @@ export const register = async (req, res) => {
   await db.query(sql, [
   name,
   email,
- hashedPassword,
+  hashedPassword,
   role.toLowerCase(),
-  roll_number,
-  branch.toUpperCase(),
-  year
+  roll_number || null,
+  branch ? branch.toUpperCase() : null,
+  year || null
 ]);
 
   res.status(201).json({
