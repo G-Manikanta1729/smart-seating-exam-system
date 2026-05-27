@@ -2,7 +2,7 @@ import pkg from 'pg';
 const { Pool } = pkg;
 
 const db = new Pool({
-  connectionString: process.env.MYSQL_URL,
+  connectionString: process.env.DATABASE_URL,
   ssl: { rejectUnauthorized: false }
 });
 
