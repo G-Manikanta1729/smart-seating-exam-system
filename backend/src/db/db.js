@@ -37,7 +37,10 @@ CREATE TABLE IF NOT EXISTS attendance (
   status VARCHAR(10) CHECK (status IN ('PRESENT','ABSENT')) NOT NULL,
   is_submitted BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+
+  UNIQUE(exam_type, exam_id, student_id, faculty_id)
+  
 );
 `)
 .then(() => console.log("Attendance table ready"))
