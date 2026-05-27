@@ -4,7 +4,7 @@ import bcrypt from "bcrypt";
 /**
  * GET students (search + filter + pagination)
  */
-export const getStudents = (req, res) => {
+export const getStudents = async (req, res) => {
   const {
     search = "",
     branch = "ALL",
@@ -16,53 +16,67 @@ export const getStudents = (req, res) => {
   const pageSize = Number(limit);
   const offset = (page - 1) * pageSize;
 
-  let where = `WHERE role='STUDENT'`;
+  let where = `WHERE role='student'`;
   const params = [];
 
   if (search) {
-    where += ` AND (name LIKE ? OR roll_number LIKE ?)`;
+    where += ` AND (name ILIKE $${params.length + 1} OR roll_number ILIKE $${params.length + 2})`;
     params.push(`%${search}%`, `%${search}%`);
   }
 
   if (branch !== "ALL") {
-    where += ` AND branch = ?`;
+    where += ` AND branch = $${params.length + 1}`;
     params.push(branch);
   }
 
   if (year !== "ALL") {
-    where += ` AND year = ?`;
+    where += ` AND year = $${params.length + 1}`;
     params.push(year);
   }
 
   const sql = `
-    SELECT SQL_CALC_FOUND_ROWS
-      id, name, roll_number, branch, year, is_active
+  SELECT
+    id,
+    name,
+    roll_number,
+    branch,
+    year,
+    is_active
+  FROM users
+  ${where}
+  ORDER BY id DESC
+  LIMIT $${params.length + 1}
+  OFFSET $${params.length + 2}
+`;
+
+  try {
+  const rows = await db.query(
+    sql,
+    [...params, pageSize, offset]
+  );
+
+  const totalQuery = `
+    SELECT COUNT(*) AS total
     FROM users
     ${where}
-    ORDER BY id DESC
-    LIMIT ? OFFSET ?
   `;
 
-  db.query(
-    sql,
-    [...params, pageSize, offset],
-    (err, rows) => {
-      if (err) {
-        console.error(err);
-        return res.status(500).json({ message: "DB error" });
-      }
-
-      db.query(
-        "SELECT FOUND_ROWS() AS total",
-        (e, total) => {
-          res.json({
-            data: rows,
-            total: total[0].total,
-          });
-        }
-      );
-    }
+  const totalResult = await db.query(
+    totalQuery,
+    params
   );
+
+  res.json({
+    data: rows.rows,
+    total: Number(totalResult.rows[0].total)
+  });
+
+} catch (err) {
+  console.error(err);
+  return res.status(500).json({
+    message: "DB error"
+  });
+}
 };
 
 /**
@@ -77,14 +91,30 @@ export const addStudent = async (req, res) => {
   const sql = `
     INSERT INTO users
     (name, roll_number, branch, year, email, password, role)
-    VALUES (?, ?, ?, ?, ?, ?, 'STUDENT')
+    VALUES ($1, $2, $3, $4, $5, $6, 'student')
   `;
 
-  db.query(
-    sql,
-    [name, roll_number, branch, year, email, hash],
-    () => res.json({ message: "Student added" })
-  );
+  try {
+  await db.query(sql, [
+    name,
+    roll_number,
+    branch,
+    year,
+    email,
+    hash
+  ]);
+
+  res.json({
+    message: "Student added"
+  });
+
+} catch (err) {
+  console.error(err);
+
+  res.status(500).json({
+    message: "DB error"
+  });
+}
 };
 
 /**
@@ -97,104 +127,131 @@ export const updateStudent = async (req, res) => {
 
   let sql = `
     UPDATE users
-    SET name=?, roll_number=?, branch=?, year=?
+    SET name=$1, roll_number=$2, branch=$3, year=$4
   `;
   const params = [name, roll_number, branch, year];
 
   if (password) {
     const hash = await bcrypt.hash(password, 10);
-    sql += `, password=?`;
+    sql += `, password=$5`;
     params.push(hash);
   }
 
-  sql += ` WHERE id=?`;
+  sql += password
+  ? ` WHERE id=$6`
+  : ` WHERE id=$5`;
   params.push(id);
 
-  db.query(sql, params, () =>
-    res.json({ message: "Student updated" })
-  );
+  try {
+  await db.query(sql, params);
+
+  res.json({
+    message: "Student updated"
+  });
+
+} catch (err) {
+  console.error(err);
+
+  res.status(500).json({
+    message: "DB error"
+  });
+}
 };
 
 /**
  * ACTIVATE / DEACTIVATE (soft delete)
  */
-export const toggleStudent = (req, res) => {
+export const toggleStudent = async (req, res) => {
   const { id } = req.params;
 
-  db.query(
-    `UPDATE users
-     SET is_active = IF(is_active=1,0,1)
-     WHERE id=?`,
-    [id],
-    () => res.json({ message: "Status updated" })
-  );
+  try {
+    await db.query(
+      `
+      UPDATE users
+      SET is_active = NOT is_active
+      WHERE id=$1
+      `,
+      [id]
+    );
+
+    res.json({
+      message: "Status updated"
+    });
+
+  } catch (err) {
+    console.error(err);
+
+    res.status(500).json({
+      message: "DB error"
+    });
+  }
 };
 
 /**
  * DASHBOARD STATS
  */
-export const getDashboardStats = (req, res) => {
-  const stats = {};
+export const getDashboardStats = async (req, res) => {
+  try {
 
-  // Total students
-  db.query(
-    "SELECT COUNT(*) AS total FROM users WHERE role='STUDENT' AND is_active=1",
-    (err, students) => {
-      if (err) return res.status(500).json({ message: "DB error" });
-      stats.students = students[0].total;
+    const students = await db.query(
+      "SELECT COUNT(*) AS total FROM users WHERE role='student' AND is_active=true"
+    );
 
-      // Total rooms
-      db.query(
-        "SELECT COUNT(*) AS total FROM rooms WHERE is_active=1",
-        (err, rooms) => {
-          if (err) return res.status(500).json({ message: "DB error" });
-          stats.rooms = rooms[0].total;
+    const rooms = await db.query(
+      "SELECT COUNT(*) AS total FROM rooms WHERE is_active=true"
+    );
 
-          // Total exams scheduled for today
-          db.query(
-            "SELECT COUNT(*) AS total FROM exams WHERE exam_date = CURDATE() AND is_active=1",
-            (err, exams) => {
-              if (err) return res.status(500).json({ message: "DB error" });
-              stats.todayExams = exams[0].total;
+    const exams = await db.query(
+      "SELECT COUNT(*) AS total FROM exams WHERE exam_date = CURRENT_DATE AND is_active=true"
+    );
 
-              // Seating generated
-              db.query(
-                "SELECT COUNT(DISTINCT exam_id) AS total FROM seating_arrangements WHERE is_deleted=0",
-                (err, seating) => {
-                  if (err) return res.status(500).json({ message: "DB error" });
-                  stats.seatingGenerated = seating[0].total;
+    const seating = await db.query(
+      "SELECT COUNT(DISTINCT exam_id) AS total FROM seating_arrangements WHERE is_deleted=0"
+    );
 
-                  res.json(stats);
-                }
-              );
-            }
-          );
-        }
-      );
-    }
-  );
+    res.json({
+      students: students.rows[0].total,
+      rooms: rooms.rows[0].total,
+      todayExams: exams.rows[0].total,
+      seatingGenerated: seating.rows[0].total
+    });
+
+  } catch (err) {
+    console.error(err);
+
+    return res.status(500).json({
+      message: "DB error"
+    });
+  }
 };
 
 /**
  * PERMANENT DELETE student
  */
-export const deleteStudentPermanent = (req, res) => {
+export const deleteStudentPermanent = async (req, res) => {
   const { id } = req.params;
 
-  db.query(
-    "DELETE FROM users WHERE id = ? AND role = 'STUDENT'",
-    [id],
-    (err, result) => {
-      if (err) {
-        console.error(err);
-        return res.status(500).json({ message: "Delete failed" });
-      }
+  try {
+    const result = await db.query(
+      "DELETE FROM users WHERE id = $1 AND role = 'student'",
+      [id]
+    );
 
-      if (result.affectedRows === 0) {
-        return res.status(404).json({ message: "Student not found" });
-      }
-
-      res.json({ message: "Student permanently deleted" });
+    if (result.rowCount === 0) {
+      return res.status(404).json({
+        message: "Student not found"
+      });
     }
-  );
+
+    res.json({
+      message: "Student permanently deleted"
+    });
+
+  } catch (err) {
+    console.error(err);
+
+    return res.status(500).json({
+      message: "Delete failed"
+    });
+  }
 };
