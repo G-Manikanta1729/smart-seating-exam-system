@@ -9,53 +9,53 @@ export const generateSeating = (req, res) => {
 
   //  Delete old seating
   db.query(
-    "DELETE FROM seating_arrangements WHERE exam_id=?",
+    "DELETE FROM seating_arrangements WHERE exam_id = $1",
     [examId],
     () => {
 
       //  Get exam
       db.query(
-        "SELECT * FROM exams WHERE id=? AND is_active=1",
+        "SELECT * FROM exams WHERE id = $1 AND is_active = TRUE",
         [examId],
         (err, exams) => {
-          if (err || exams.length === 0)
+          if (err || exams.rows.length === 0)
             return res.status(400).json({ message: "Invalid exam" });
 
-          const exam = exams[0];
+          const exam = exams.rows[0];
 
           //  Get students
           db.query(
             `
             SELECT id, roll_number, name
             FROM users
-            WHERE role='STUDENT'
-              AND is_active=1
-              AND branch=?
-              AND year=?
+            WHERE role = 'student'
+              AND is_active = TRUE
+              AND branch = $1
+              AND year = $2
             ORDER BY roll_number ASC
             `,
             [exam.branch, exam.year],
             (err, students) => {
-              if (err || students.length === 0)
+              if (err || students.rows.length === 0)
                 return res.status(400).json({ message: "No students found" });
 
               //  Get rooms
               db.query(
-                "SELECT * FROM rooms WHERE is_active=1 ORDER BY id",
+                "SELECT * FROM rooms WHERE is_active = TRUE ORDER BY id",
                 (err, rooms) => {
-                  if (err || rooms.length === 0)
+                  if (err || rooms.rows.length === 0)
                     return res.status(400).json({ message: "No rooms available" });
 
                   let index = 0;
                   const values = [];
 
                   // Seat allocation
-                  rooms.forEach(room => {
+                  rooms.rows.forEach(room => {
                     const roomCapacity = room.rows_count * room.cols_count;
                     for (let i = 1; i <= roomCapacity; i++) {
-                      if (index >= students.length) break;
+                      if (index >= students.rows.length) break;
 
-                      const student = students[index];
+                      const student = students.rows[index];
                       if (!student || !student.id) break;
 
                       values.push([
@@ -73,101 +73,110 @@ export const generateSeating = (req, res) => {
                   if (values.length === 0)
                     return res.status(400).json({ message: "Insufficient capacity" });
 
-                  //  Insert seating
-                  db.query(
-                    `
+                  //  Insert seating using parameterized query for multiple rows
+                  let insertQuery = `
                     INSERT INTO seating_arrangements
                     (exam_id, room_id, student_id, seat_label, is_deleted)
-                    VALUES ?
-                    `,
-                    [values],
-                    err => {
-                      if (err) {
-                        console.error("INSERT ERROR:", err);
-                        return res.status(500).json({ message: "Insert failed" });
-                      }
+                    VALUES 
+                  `;
+                  
+                  const placeholders = [];
+                  const flatValues = [];
+                  
+                  values.forEach((row, idx) => {
+                    const placeholderStart = idx * 5 + 1;
+                    placeholders.push(`($${placeholderStart}, $${placeholderStart + 1}, $${placeholderStart + 2}, $${placeholderStart + 3}, $${placeholderStart + 4})`);
+                    flatValues.push(...row);
+                  });
+                  
+                  insertQuery += placeholders.join(", ");
 
-                      //  Mark seating generated
-                      db.query(
-                        "UPDATE exams SET seating_generated=1 WHERE id=?",
-                        [examId]
-                      );
+                  db.query(insertQuery, flatValues, err => {
+                    if (err) {
+                      console.error("INSERT ERROR:", err);
+                      return res.status(500).json({ message: "Insert failed" });
+                    }
 
-                      /* ================= AUTO FACULTY ALLOCATION ================= */
+                    //  Mark seating generated
+                    db.query(
+                      "UPDATE exams SET seating_generated = TRUE WHERE id = $1",
+                      [examId]
+                    );
 
-                      // Remove previous faculty allocation for this exam
-                      db.query(
-                        "DELETE FROM faculty_allocation WHERE exam_id=?",
-                        [examId],
-                        () => {
+                    /* ================= AUTO FACULTY ALLOCATION ================= */
 
-                          // Get rooms used
-                          db.query(
-                            `
-                            SELECT DISTINCT room_id
-                            FROM seating_arrangements
-                            WHERE exam_id=?
-                            `,
-                            [examId],
-                            (err, roomRows) => {
-                              if (err) {
-                                console.error("ROOM FETCH ERROR:", err);
-                                return res.json({ message: "Seating generated (faculty skipped)" });
-                              }
+                    // Remove previous faculty allocation for this exam
+                    db.query(
+                      "DELETE FROM faculty_allocation WHERE exam_id = $1",
+                      [examId],
+                      () => {
 
-                              // Get active faculty
-                              db.query(
-                                `
-                                SELECT id
-                                FROM users
-                                WHERE role='FACULTY' AND is_active=1
-                                ORDER BY id
-                                `,
-                                (err, facultyRows) => {
-                                  if (err || facultyRows.length === 0) {
-                                    console.error("FACULTY FETCH ERROR:", err);
-                                    return res.json({ message: "Seating generated (no faculty)" });
-                                  }
+                        // Get rooms used
+                        db.query(
+                          `
+                          SELECT DISTINCT room_id
+                          FROM seating_arrangements
+                          WHERE exam_id = $1
+                          `,
+                          [examId],
+                          (err, roomRows) => {
+                            if (err) {
+                              console.error("ROOM FETCH ERROR:", err);
+                              return res.json({ message: "Seating generated (faculty skipped)" });
+                            }
 
-                                  // Assign faculty round-robin
-                                  roomRows.forEach((room, i) => {
-                                    const facultyId =
-                                      facultyRows[i % facultyRows.length].id;
+                            // Get active faculty
+                            db.query(
+                              `
+                              SELECT id
+                              FROM users
+                              WHERE role = 'faculty' AND is_active = TRUE
+                              ORDER BY id
+                              `,
+                              (err, facultyRows) => {
+                                if (err || facultyRows.rows.length === 0) {
+                                  console.error("FACULTY FETCH ERROR:", err);
+                                  return res.json({ message: "Seating generated (no faculty)" });
+                                }
 
-                                    db.query(
-                                      `
-                                      INSERT INTO faculty_allocation
-                                      (exam_id, room_id, faculty_id, allocated_date, status)
-                                      VALUES (?, ?, ?, CURDATE(), 'Assigned')
-                                      `,
-                                      [examId, room.room_id, facultyId]
-                                    );
+                                // Assign faculty round-robin
+                                roomRows.rows.forEach((room, i) => {
+                                  const facultyId =
+                                    facultyRows.rows[i % facultyRows.rows.length].id;
+
+                                  db.query(
+                                    `
+                                    INSERT INTO faculty_allocation
+                                    (exam_id, room_id, faculty_id, allocated_date, status)
+                                    VALUES ($1, $2, $3, CURRENT_DATE, 'Assigned')
+                                    `,
+                                    [examId, room.room_id, facultyId]
+                                  );
+                                });
+
+                                /*res.json({
+                                  message: "Seating & Faculty allocation generated successfully"
+                                });*/
+                                autoAllocateFaculty(examId)
+                                  .then(() => {
+                                    res.json({
+                                      message: "Seating & faculty allocated successfully"
+                                    });
+                                  })
+                                  .catch(err => {
+                                    console.error("AUTO FACULTY ERROR:", err);
+                                    res.status(500).json({
+                                      message: "Seating done but faculty allocation failed"
+                                    });
                                   });
 
-                                  /*res.json({
-                                    message: "Seating & Faculty allocation generated successfully"
-                                  });*/
-                                  autoAllocateFaculty(examId)
-                                    .then(() => {
-                                      res.json({
-                                        message: "Seating & faculty allocated successfully"
-                                      });
-                                    })
-                                    .catch(err => {
-                                      console.error("AUTO FACULTY ERROR:", err);
-                                      res.status(500).json({
-                                        message: "Seating done but faculty allocation failed"
-                                      });
-                                    });
-
-                                }
-                              );
-                            }
-                          );
-                        }
-                      );
-                    }
-                  );
+                              }
+                            );
+                          }
+                        );
+                      }
+                    );
+                  });
                 }
               );
             }
@@ -190,15 +199,15 @@ export const getSeatingByExam = (req, res) => {
            u.roll_number,
            u.name
     FROM seating_arrangements sa
-    JOIN rooms r ON r.id=sa.room_id
-    JOIN users u ON u.id=sa.student_id
-    WHERE sa.exam_id=? AND sa.is_deleted=0
+    JOIN rooms r ON r.id = sa.room_id
+    JOIN users u ON u.id = sa.student_id
+    WHERE sa.exam_id = $1 AND sa.is_deleted = 0
     ORDER BY r.room_name, sa.seat_label
     `,
     [examId],
-    (err, rows) => {
+    (err, result) => {
       if (err) return res.status(500).json({ message: "Fetch failed" });
-      res.json(rows);
+      res.json(result.rows);
     }
   );
 };
@@ -208,7 +217,7 @@ export const undoDeleteSeating = (req, res) => {
   const { examId } = req.params;
 
   db.query(
-    "UPDATE seating_arrangements SET is_deleted=0 WHERE exam_id=?",
+    "UPDATE seating_arrangements SET is_deleted = 0 WHERE exam_id = $1",
     [examId],
     () => res.json({ message: "Undo successful" })
   );
@@ -230,18 +239,19 @@ export const exportSeatingPDF = (req, res) => {
     `
     SELECT r.room_name, sa.seat_label, u.roll_number, u.name
     FROM seating_arrangements sa
-    JOIN rooms r ON r.id=sa.room_id
-    JOIN users u ON u.id=sa.student_id
-    WHERE sa.exam_id=? AND sa.is_deleted=0
+    JOIN rooms r ON r.id = sa.room_id
+    JOIN users u ON u.id = sa.student_id
+    WHERE sa.exam_id = $1 AND sa.is_deleted = 0
     ORDER BY r.room_name, sa.seat_label
     `,
     [examId],
-    (err, rows) => {
+    (err, result) => {
       if (err) {
         doc.text("Failed to generate PDF");
         return doc.end();
       }
 
+      const rows = result.rows;
       let currentRoom = "";
       rows.forEach(r => {
         if (r.room_name !== currentRoom) {
@@ -265,9 +275,9 @@ export const deleteSeating = (req, res) => {
   const { examId } = req.params;
 
   db.query(
-    "DELETE FROM seating_arrangements WHERE exam_id = ?",
+    "DELETE FROM seating_arrangements WHERE exam_id = $1",
     [examId],
-    (err) => {
+    (err, result) => {
       if (err) {
         console.error("DELETE SEATING ERROR:", err);
         return res.status(500).json({ message: "Failed to delete seating" });
@@ -275,12 +285,12 @@ export const deleteSeating = (req, res) => {
 
       // remove faculty allocation too
       db.query(
-        "DELETE FROM faculty_allocation WHERE exam_id = ?",
+        "DELETE FROM faculty_allocation WHERE exam_id = $1",
         [examId]
       );
 
       db.query(
-        "UPDATE exams SET seating_generated = 0 WHERE id = ?",
+        "UPDATE exams SET seating_generated = FALSE WHERE id = $1",
         [examId]
       );
 
