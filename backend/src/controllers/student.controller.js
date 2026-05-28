@@ -48,10 +48,12 @@ export const getStudentDashboard = (req, res) => {
     [studentId],
     (err, studentResult) => {
       if (err || studentResult.rows.length === 0) {
+        console.error("Student not found in DB:", err);
         return res.status(404).json({ message: "Student not found" });
       }
 
       const student = studentResult.rows[0];
+      console.log("Student data fetched:", student); // ✅ helps debugging
 
       // ---------- REGULAR TODAY ----------
       const todayExamSql = `
