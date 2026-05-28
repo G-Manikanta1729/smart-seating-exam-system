@@ -33,7 +33,6 @@ const logReportDownload = (
     }
   );
 };
-
 /* ================= GET DATE RANGE FILTER ================= */
 const getDateRangeFilter = (dateRange) => {
   const now = new Date();
