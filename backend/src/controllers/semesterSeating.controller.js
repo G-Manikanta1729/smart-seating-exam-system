@@ -7,9 +7,9 @@ import db from "../db/db.js";
 export const getSemesterSlots = (req, res) => {
   db.query(
     "SELECT * FROM semester_exam_slots ORDER BY exam_date, exam_time",
-    (err, rows) => {
+    (err, result) => {
       if (err) return res.status(500).json({ message: "DB error" });
-      res.json(rows);
+      res.json(result.rows);
     }
   );
 };
@@ -21,7 +21,7 @@ export const createSemesterSlot = (req, res) => {
   const { year, exam_date, exam_time } = req.body;
 
   db.query(
-    "INSERT INTO semester_exam_slots (year, exam_date, exam_time) VALUES (?,?,?)",
+    "INSERT INTO semester_exam_slots (year, exam_date, exam_time) VALUES ($1, $2, $3)",
     [year, exam_date, exam_time],
     (err) => {
       if (err) return res.status(500).json({ message: "DB error" });
@@ -36,7 +36,7 @@ export const createSemesterSlot = (req, res) => {
 export const deleteSemesterSlot = (req, res) => {
   const { id } = req.params;
 
-  db.query("DELETE FROM semester_exam_slots WHERE id=?", [id], err => {
+  db.query("DELETE FROM semester_exam_slots WHERE id = $1", [id], err => {
     if (err) return res.status(500).json({ message: "Delete failed" });
     res.json({ message: "Slot deleted" });
   });
@@ -50,19 +50,20 @@ const autoAllocateFacultyForSemesterSlot = (slotId) => {
 
     // Check if already allocated
     db.query(
-      "SELECT COUNT(*) AS count FROM semester_faculty_allocation WHERE semester_slot_id=?",
+      "SELECT COUNT(*) AS count FROM semester_faculty_allocation WHERE semester_slot_id = $1",
       [slotId],
       (err, result) => {
         if (err) return reject(err);
-        if (result[0].count > 0) return resolve();
+        if (result.rows[0].count > 0) return resolve();
 
         // Get all active faculty
         db.query(
           `SELECT id AS faculty_id
-FROM users
-WHERE role='FACULTY' AND is_active=1
-ORDER BY id`,
-          (err, faculty) => {
+           FROM users
+           WHERE role = 'faculty' AND is_active = TRUE
+           ORDER BY id`,
+          (err, facultyResult) => {
+            const faculty = facultyResult.rows;
             if (err || !faculty.length)
               return reject("No faculty available");
 
@@ -72,9 +73,9 @@ ORDER BY id`,
                FROM semester_faculty_allocation
                ORDER BY id DESC
                LIMIT 1`,
-              (err, last) => {
-
+              (err, lastResult) => {
                 let startIndex = 0;
+                const last = lastResult.rows;
 
                 if (!err && last.length > 0) {
                   const lastFacultyId = last[0].faculty_id;
@@ -88,37 +89,49 @@ ORDER BY id`,
                 db.query(
                   `SELECT DISTINCT room_id
                    FROM semester_seating_arrangements
-                   WHERE semester_slot_id=?`,
+                   WHERE semester_slot_id = $1`,
                   [slotId],
-                  (err, rooms) => {
+                  (err, roomsResult) => {
+                    const rooms = roomsResult.rows;
                     if (err || !rooms.length)
                       return reject("No rooms found");
 
-                    const values = [];
+                    // Build multi-row insert
+                    const insertValues = [];
                     let index = startIndex;
 
                     rooms.forEach(r => {
                       const f = faculty[index % faculty.length];
-                      values.push([
+                      insertValues.push([
                         slotId,
                         r.room_id,
                         f.faculty_id,
-                        new Date(),
+                        new Date(),    // allocated_date
                         "Assigned"
                       ]);
                       index++;
                     });
 
-                    db.query(
-                      `INSERT INTO semester_faculty_allocation
-                       (semester_slot_id, room_id, faculty_id, allocated_date, status)
-                       VALUES ?`,
-                      [values],
-                      err => {
-                        if (err) return reject(err);
-                        resolve();
-                      }
-                    );
+                    if (insertValues.length === 0) return resolve();
+
+                    // Create parameterized insert
+                    const placeholders = [];
+                    const flatValues = [];
+                    insertValues.forEach((row, idx) => {
+                      const base = idx * 5 + 1;
+                      placeholders.push(`($${base}, $${base+1}, $${base+2}, $${base+3}, $${base+4})`);
+                      flatValues.push(...row);
+                    });
+                    const insertSql = `
+                      INSERT INTO semester_faculty_allocation
+                      (semester_slot_id, room_id, faculty_id, allocated_date, status)
+                      VALUES ${placeholders.join(", ")}
+                    `;
+
+                    db.query(insertSql, flatValues, err => {
+                      if (err) return reject(err);
+                      resolve();
+                    });
                   }
                 );
               }
@@ -129,6 +142,7 @@ ORDER BY id`,
     );
   });
 };
+
 /* =========================
    GENERATE SEMESTER SEATING
 ========================= */
@@ -139,42 +153,50 @@ export const generateSemesterSeating = (req, res) => {
     return res.status(400).json({ message: "Slot or rooms missing" });
   }
 
-  const BRANCH_ORDER = ["IT", "CSE", "ECE", "EEE", "CSD", "CSM", "MECH", "CIV"];
+  const BRANCH_ORDER = ["IT", "CSE", "ECE", "EEE", "CSD", "CSM", "MECH", "CIVIL"];
 
   db.query(
-    "DELETE FROM semester_seating_arrangements WHERE semester_slot_id=?",
+    "DELETE FROM semester_seating_arrangements WHERE semester_slot_id = $1",
     [slot_id],
     err => {
       if (err) return res.status(500).json({ message: "Reset failed" });
 
       db.query(
-        "SELECT year FROM semester_exam_slots WHERE id=?",
+        "SELECT year FROM semester_exam_slots WHERE id = $1",
         [slot_id],
-        (err, slot) => {
+        (err, slotResult) => {
+          const slot = slotResult.rows;
           if (err || !slot.length)
             return res.status(404).json({ message: "Slot not found" });
 
+          const year = slot[0].year;
+
+          // Get rooms – use ANY for array
           db.query(
             `SELECT id, room_name, rows_count, cols_count
              FROM rooms
-             WHERE id IN (?) AND is_active=1`,
+             WHERE id = ANY($1::int[]) AND is_active = TRUE`,
             [room_ids],
-            (err, rooms) => {
+            (err, roomsResult) => {
+              const rooms = roomsResult.rows;
               if (err) return res.status(500).json({ message: "Room fetch error" });
 
               db.query(
                 `SELECT id, branch, roll_number
                  FROM users
-                 WHERE role='STUDENT' AND year=? AND is_active=1
+                 WHERE role = 'student' AND year = $1 AND is_active = TRUE
                  ORDER BY branch, roll_number`,
-                [slot[0].year],
-                (err, students) => {
+                [year],
+                (err, studentsResult) => {
+                  const students = studentsResult.rows;
                   if (err)
                     return res.status(500).json({ message: "Student fetch error" });
 
                   const branchMap = {};
                   BRANCH_ORDER.forEach(b => (branchMap[b] = []));
-                  students.forEach(s => branchMap[s.branch]?.push(s));
+                  students.forEach(s => {
+                    if (branchMap[s.branch]) branchMap[s.branch].push(s);
+                  });
 
                   const inserts = [];
                   let branchIndex = 0;
@@ -197,22 +219,38 @@ export const generateSemesterSeating = (req, res) => {
                     }
                   });
 
-                  db.query(
-                    `INSERT INTO semester_seating_arrangements
-                     (semester_slot_id, room_id, seat_number, student_id)
-                     VALUES ?`,
-                    [inserts],
-                    async () => {
-                      try {
-                        await autoAllocateFacultyForSemesterSlot(slot_id);
-                      } catch (e) {
-                        console.error("Semester faculty allocation failed:", e);
-                      }
-                      res.json({
-                        message: "Semester seating & faculty allocation generated"
-                      });
+                  if (inserts.length === 0) {
+                    return res.status(400).json({ message: "No seating generated" });
+                  }
+
+                  // Build multi-row insert for seating
+                  const placeholders = [];
+                  const flatValues = [];
+                  inserts.forEach((row, idx) => {
+                    const base = idx * 4 + 1;
+                    placeholders.push(`($${base}, $${base+1}, $${base+2}, $${base+3})`);
+                    flatValues.push(...row);
+                  });
+                  const insertSql = `
+                    INSERT INTO semester_seating_arrangements
+                    (semester_slot_id, room_id, seat_number, student_id)
+                    VALUES ${placeholders.join(", ")}
+                  `;
+
+                  db.query(insertSql, flatValues, async (err) => {
+                    if (err) {
+                      console.error("SEATING INSERT ERROR:", err);
+                      return res.status(500).json({ message: "Insert failed" });
                     }
-                  );
+                    try {
+                      await autoAllocateFacultyForSemesterSlot(slot_id);
+                    } catch (e) {
+                      console.error("Semester faculty allocation failed:", e);
+                    }
+                    res.json({
+                      message: "Semester seating & faculty allocation generated"
+                    });
+                  });
                 }
               );
             }
@@ -231,29 +269,30 @@ export const viewSemesterSeating = (req, res) => {
 
   const sql = `
     SELECT
-  r.id AS room_id,
-  r.room_name,
-  (r.rows_count * r.cols_count) AS capacity,
-  s.seat_number,
-  u.roll_number,
-  u.name,
-  u.branch,
-  u_fac.name AS faculty_name,
-  u_fac.email AS faculty_email
-FROM semester_seating_arrangements s
-JOIN users u ON s.student_id = u.id
-JOIN rooms r ON s.room_id = r.id
-LEFT JOIN semester_faculty_allocation sfa
-  ON sfa.semester_slot_id = s.semester_slot_id
- AND sfa.room_id = r.id
-LEFT JOIN users u_fac
-  ON u_fac.id = sfa.faculty_id
-WHERE s.semester_slot_id = ?
-ORDER BY r.room_name, s.seat_number
+      r.id AS room_id,
+      r.room_name,
+      (r.rows_count * r.cols_count) AS capacity,
+      s.seat_number,
+      u.roll_number,
+      u.name,
+      u.branch,
+      u_fac.name AS faculty_name,
+      u_fac.email AS faculty_email
+    FROM semester_seating_arrangements s
+    JOIN users u ON s.student_id = u.id
+    JOIN rooms r ON s.room_id = r.id
+    LEFT JOIN semester_faculty_allocation sfa
+      ON sfa.semester_slot_id = s.semester_slot_id
+     AND sfa.room_id = r.id
+    LEFT JOIN users u_fac
+      ON u_fac.id = sfa.faculty_id
+    WHERE s.semester_slot_id = $1
+    ORDER BY r.room_name, s.seat_number
   `;
 
-  db.query(sql, [slotId], (err, rows) => {
+  db.query(sql, [slotId], (err, result) => {
     if (err) return res.status(500).json({ message: "DB error" });
+    const rows = result.rows;
     if (!rows.length)
       return res.status(404).json({ message: "No seating found" });
     res.json(rows);
@@ -270,42 +309,45 @@ export const downloadSemesterSeatingPDF = (req, res) => {
   const slotSql = `
     SELECT year, exam_date, exam_time 
     FROM semester_exam_slots 
-    WHERE id = ?
+    WHERE id = $1
   `;
 
-  db.query(slotSql, [slotId], (err, slots) => {
-    if (err || !slots.length) {
+  db.query(slotSql, [slotId], (err, slotResult) => {
+    if (err || !slotResult.rows.length) {
       return res.status(404).json({ message: "Exam slot not found" });
     }
 
-    const slot = slots[0];
+    const slot = slotResult.rows[0];
 
-    // Then get detailed seating with room capacity (UPDATED TABLES ONLY)
+    // Then get detailed seating with room capacity
     const seatingSql = `
       SELECT 
-  r.id AS room_id,
-  r.room_name,
-  (r.rows_count * r.cols_count) AS capacity,
-  u_fac.name AS faculty_name,
-  u_fac.email AS faculty_email,
-  s.seat_number,
-  u.roll_number,
-  u.name,
-  u.branch,
-  COUNT(s.id) OVER (PARTITION BY r.id) AS room_allocation
-FROM semester_seating_arrangements s
-JOIN rooms r ON r.id = s.room_id
-JOIN users u ON u.id = s.student_id
-LEFT JOIN semester_faculty_allocation sfa
-  ON sfa.semester_slot_id = s.semester_slot_id
- AND sfa.room_id = r.id
-LEFT JOIN users u_fac
-  ON u_fac.id = sfa.faculty_id
-WHERE s.semester_slot_id = ?
-ORDER BY r.room_name, s.seat_number
+        r.id AS room_id,
+        r.room_name,
+        r.rows_count,
+        r.cols_count,
+        (r.rows_count * r.cols_count) AS capacity,
+        u_fac.name AS faculty_name,
+        u_fac.email AS faculty_email,
+        s.seat_number,
+        u.roll_number,
+        u.name,
+        u.branch,
+        COUNT(s.id) OVER (PARTITION BY r.id) AS room_allocation
+      FROM semester_seating_arrangements s
+      JOIN rooms r ON r.id = s.room_id
+      JOIN users u ON u.id = s.student_id
+      LEFT JOIN semester_faculty_allocation sfa
+        ON sfa.semester_slot_id = s.semester_slot_id
+       AND sfa.room_id = r.id
+      LEFT JOIN users u_fac
+        ON u_fac.id = sfa.faculty_id
+      WHERE s.semester_slot_id = $1
+      ORDER BY r.room_name, s.seat_number
     `;
 
-    db.query(seatingSql, [slotId], (err, rows) => {
+    db.query(seatingSql, [slotId], (err, seatingResult) => {
+      const rows = seatingResult.rows;
       if (err || !rows.length) {
         return res.status(404).json({ message: "No seating found" });
       }
@@ -318,7 +360,7 @@ ORDER BY r.room_name, s.seat_number
       );
       doc.pipe(res);
 
-      // Header with exam details
+      // Header
       doc.fontSize(20).font("Helvetica-Bold").text("SEMESTER SEATING ARRANGEMENT", {
         align: "center",
       });
@@ -328,7 +370,7 @@ ORDER BY r.room_name, s.seat_number
       });
       doc.moveDown(1);
 
-      // Exam slot details
+      // Exam details
       doc.fontSize(12).font("Helvetica-Bold").text("Exam Details:");
       doc.fontSize(11).font("Helvetica")
         .text(`Year: ${slot.year}`)
@@ -336,21 +378,19 @@ ORDER BY r.room_name, s.seat_number
         .text(`Time: ${slot.exam_time}`)
         .moveDown(1);
 
-      let currentRoom = "";
+      // Room stats
       const roomStats = {};
-
-      // Calculate room stats
       rows.forEach((r) => {
         if (!roomStats[r.room_id]) {
           roomStats[r.room_id] = {
             room_name: r.room_name,
-            capacity: r.rows_count * r.cols_count,
+            capacity: r.capacity,
             allocated: r.room_allocation,
+            faculty_name: r.faculty_name,
           };
         }
       });
 
-      // Room Summary
       doc.fontSize(12).font("Helvetica-Bold").text("Room Summary:");
       Object.values(roomStats).forEach((room) => {
         const utilization = ((room.allocated / room.capacity) * 100).toFixed(1);
@@ -365,6 +405,7 @@ ORDER BY r.room_name, s.seat_number
       doc.fontSize(12).font("Helvetica-Bold").text("Seating Arrangement by Room:");
       doc.moveDown(0.5);
 
+      let currentRoom = "";
       rows.forEach((r, i) => {
         if (r.room_name !== currentRoom) {
           if (currentRoom) doc.addPage();
