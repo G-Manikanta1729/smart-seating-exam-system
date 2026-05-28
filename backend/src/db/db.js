@@ -74,7 +74,8 @@ CREATE TABLE IF NOT EXISTS faculty_allocation (
   allocated_date DATE NOT NULL,
   status VARCHAR(20) DEFAULT 'Assigned',
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+  updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE (exam_id, room_id)
 );
 `)
 .then(() => console.log("Faculty Allocation table ready"))
