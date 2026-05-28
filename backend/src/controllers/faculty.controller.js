@@ -2,7 +2,7 @@ import db from "../db/db.js";
 import bcrypt from "bcrypt";
 
 /* ================= FACULTY DASHBOARD ================= */
-export const getFacultyDashboard = (req, res) => {
+export const getFacultyDashboard = async (req, res) => {
   const facultyId = req.user.id;
 
   const sql = `
@@ -10,15 +10,16 @@ export const getFacultyDashboard = (req, res) => {
     SELECT
       e.id,
       e.exam_name,
-      DATE_FORMAT(e.exam_date, '%Y-%m-%d') AS exam_date,
-      CONCAT(
-        DATE_FORMAT(e.exam_time, '%h:%i %p'),
-        ' - ',
-        DATE_FORMAT(ADDTIME(e.exam_time, SEC_TO_TIME(e.duration*60)), '%h:%i %p')
-      ) AS exam_time,
-      GROUP_CONCAT(DISTINCT r.room_name SEPARATOR ', ') AS room_names,
+      TO_CHAR(e.exam_date, 'YYYY-MM-DD') AS exam_date,
+     TO_CHAR(e.exam_time, 'HH12:MI AM')
+|| ' - ' ||
+TO_CHAR(
+  (e.exam_time::time + (e.duration || ' minutes')::interval),
+  'HH12:MI AM'
+) AS exam_time,
+      STRING_AGG(DISTINCT r.room_name, ', ') AS room_names,
       COUNT(DISTINCT sa.student_id) AS students,
-      GROUP_CONCAT(DISTINCT u.name SEPARATOR ', ') AS faculty_names,
+      STRING_AGG(DISTINCT u.name, ', ') AS faculty_names,
       'regular' AS exam_type,
       e.id AS exam_id
     FROM faculty_allocation fa
@@ -27,25 +28,31 @@ export const getFacultyDashboard = (req, res) => {
     LEFT JOIN rooms r ON r.id = fa.room_id
     LEFT JOIN seating_arrangements sa
       ON sa.exam_id = e.id AND sa.room_id = r.id AND sa.is_deleted = 0
-    WHERE e.exam_date >= CURDATE()
-      AND fa.faculty_id = ?
-    GROUP BY e.id
+    WHERE e.exam_date >= CURRENT_DATE
+      AND fa.faculty_id = $1
+    GROUP BY
+e.id,
+e.exam_name,
+e.exam_date,
+e.exam_time,
+e.duration
 
     UNION ALL
 
     /* ===== SEMESTER EXAMS ===== */
     SELECT
       s.id,
-      CONCAT('Semester Exam - Year ', s.year) AS exam_name,
-      DATE_FORMAT(s.exam_date, '%Y-%m-%d') AS exam_date,
-      CONCAT(
-        DATE_FORMAT(s.exam_time, '%h:%i %p'),
-        ' - ',
-        DATE_FORMAT(ADDTIME(s.exam_time, '03:00:00'), '%h:%i %p')
-      ) AS exam_time,
-      GROUP_CONCAT(DISTINCT r.room_name SEPARATOR ', ') AS room_names,
+      'Semester Exam - Year ' || s.year AS exam_name,
+      TO_CHAR(s.exam_date, 'YYYY-MM-DD') AS exam_date,
+      TO_CHAR(s.exam_time, 'HH12:MI AM')
+|| ' - ' ||
+TO_CHAR(
+  s.exam_time + interval '3 hours',
+  'HH12:MI AM'
+) AS exam_time,
+      STRING_AGG(DISTINCT r.room_name, ', ') AS room_names,
       COUNT(DISTINCT ssa.student_id) AS students,
-      GROUP_CONCAT(DISTINCT u.name SEPARATOR ', ') AS faculty_names,
+      STRING_AGG(DISTINCT u.name, ', ') AS faculty_names,
       'semester' AS exam_type,
       s.id AS exam_id
     FROM semester_faculty_allocation fa
@@ -54,23 +61,39 @@ export const getFacultyDashboard = (req, res) => {
     LEFT JOIN rooms r ON r.id = fa.room_id
     LEFT JOIN semester_seating_arrangements ssa
       ON ssa.semester_slot_id = s.id AND ssa.room_id = r.id
-    WHERE s.exam_date >= CURDATE()
-      AND fa.faculty_id = ?
-    GROUP BY s.id
+    WHERE s.exam_date >= CURRENT_DATE
+      AND fa.faculty_id = $2
+    GROUP BY
+s.id,
+s.year,
+s.exam_date,
+s.exam_time
     ORDER BY exam_date ASC
   `;
 
-  db.query(sql, [facultyId, facultyId], (err, rows) => {
-    if (err) {
-      console.error("FACULTY DASHBOARD ERROR:", err);
-      return res.status(500).json({ message: "Database error" });
-    }
-    return res.json({ allocations: rows });
+  try {
+
+  const result = await db.query(
+    sql,
+    [facultyId, facultyId]
+  );
+
+  return res.json({
+    allocations: result.rows
   });
+
+} catch (err) {
+
+  console.error("FACULTY DASHBOARD ERROR:", err);
+
+  return res.status(500).json({
+    message: "Database error"
+  });
+}
 };
 
 /* ================= FACULTY SEATING VIEW ================= */
-export const getFacultySeatingView = (req, res) => {
+export const getFacultySeatingView = async (req, res) => {
   try {
     const facultyId = req.user.id;
     const examId = req.params.examId;
@@ -99,8 +122,8 @@ export const getFacultySeatingView = (req, res) => {
          AND fa.room_id = sa.room_id
         JOIN users u ON u.id = sa.student_id
         JOIN rooms r ON r.id = sa.room_id
-        WHERE fa.exam_id = ?
-          AND fa.faculty_id = ?
+        WHERE fa.exam_id = $1
+          AND fa.faculty_id = $2
         ORDER BY r.room_name, sa.seat_number
       `;
       params = [examId, facultyId];
@@ -120,8 +143,8 @@ export const getFacultySeatingView = (req, res) => {
          AND sfa.room_id = ssa.room_id
         JOIN users u ON u.id = ssa.student_id
         JOIN rooms r ON r.id = ssa.room_id
-        WHERE sfa.semester_slot_id = ?
-          AND sfa.faculty_id = ?
+        WHERE sfa.semester_slot_id = $1
+          AND sfa.faculty_id = $2
         ORDER BY r.room_name, ssa.seat_number
       `;
       params = [examId, facultyId];
@@ -131,14 +154,9 @@ export const getFacultySeatingView = (req, res) => {
       return res.status(400).json({ message: "Invalid examType" });
     }
 
-    db.query(sql, params, (err, rows) => {
-      if (err) {
-        console.error("SEATING ERROR:", err);
-        return res.status(500).json({ message: "Database error" });
-      }
-
-      return res.json(rows);
-    });
+    const result = await db.query(sql, params);
+    
+      return res.json(result.rows);
 
   } catch (error) {
     console.error("SEATING CONTROLLER ERROR:", error);
@@ -179,19 +197,26 @@ export const viewSemesterSeatingForFaculty = (req, res) => {
 */
 
 /* ================= GET FACULTY LIST (ADMIN) ================= */
-export const getFaculty = (req, res) => {
+export const getFaculty = async (req, res) => {
   const sql = `
     SELECT id, name, email, branch, is_active
     FROM users
-    WHERE role = 'FACULTY'
+    WHERE role = 'faculty'
   `;
-  db.query(sql, (err, rows) => {
-    if (err) {
-      console.error("GET FACULTY ERROR:", err);
-      return res.status(500).json({ message: "Database error" });
-    }
-    res.json(rows);
+   try {
+
+  const result = await db.query(sql);
+
+  res.json(result.rows);
+
+} catch (err) {
+
+  console.error("GET FACULTY ERROR:", err);
+
+  return res.status(500).json({
+    message: "Database error"
   });
+}
 };
 
 
@@ -200,32 +225,55 @@ export const createFaculty = async (req, res) => {
   const { name, email, password, branch } = req.body;
 
   if (!name || !email) {
-    return res.status(400).json({ message: "Name and email are required" });
+    return res.status(400).json({
+      message: "Name and email are required"
+    });
   }
 
   try {
-    const hash = await bcrypt.hash(password || "password", 10);
+
+    const hash = await bcrypt.hash(
+      password || "password",
+      10
+    );
 
     const sql = `
       INSERT INTO users
-      (name, email, password, branch, role, is_active)
-      VALUES (?, ?, ?, ?, 'FACULTY', 1)
+      (
+        name,
+        email,
+        password,
+        branch,
+        role,
+        is_active
+      )
+      VALUES ($1, $2, $3, $4, 'faculty', true)
     `;
 
-    db.query(sql, [name, email, hash, branch], (err) => {
-      if (err) {
-        console.error("CREATE FACULTY ERROR:", err);
-        if (err.code === "ER_DUP_ENTRY") {
-          return res.status(409).json({ message: "Email already exists" });
-        }
-        return res.status(500).json({ message: "Database error" });
-      }
+    await db.query(sql, [
+      name,
+      email,
+      hash,
+      branch
+    ]);
 
-      res.status(201).json({ message: "Faculty created" });
+    res.status(201).json({
+      message: "Faculty created"
     });
+
   } catch (err) {
-    console.error("CREATE FACULTY HASH ERROR:", err);
-    res.status(500).json({ message: "Server error" });
+
+    console.error("CREATE FACULTY ERROR:", err);
+
+    if (err.code === "23505") {
+      return res.status(409).json({
+        message: "Email already exists"
+      });
+    }
+
+    return res.status(500).json({
+      message: "Database error"
+    });
   }
 };
 
@@ -236,18 +284,18 @@ export const updateFaculty = async (req, res) => {
 
   if (!id) return res.status(400).json({ message: "Faculty id required" });
 
-  let sql = `UPDATE users SET name = ?, email = ?, branch = ?`;
+  let sql = `UPDATE users SET name = $1, email = $2, branch = $3`;
   const params = [name, email, branch];
 
   if (typeof is_active !== "undefined") {
-    sql += `, is_active = ?`;
-    params.push(is_active ? 1 : 0);
+    sql += `, is_active = $4`;
+    params.push(is_active);
   }
 
   if (password) {
     try {
       const hash = await bcrypt.hash(password, 10);
-      sql += `, password = ?`;
+      sql += `, password = $5`;
       params.push(hash);
     } catch (err) {
       console.error("UPDATE FACULTY HASH ERROR:", err);
@@ -255,7 +303,7 @@ export const updateFaculty = async (req, res) => {
     }
   }
 
-  sql += ` WHERE id = ? AND role = 'FACULTY'`;
+  sql += ` WHERE id = $${params.length + 1} AND role = 'faculty'`;
   params.push(id);
 
   db.query(sql, params, (err, result) => {
@@ -264,7 +312,7 @@ export const updateFaculty = async (req, res) => {
       return res.status(500).json({ message: "Database error" });
     }
 
-    if (result.affectedRows === 0) {
+    if (result.rowCount === 0) {
       return res.status(404).json({ message: "Faculty not found" });
     }
 
@@ -277,7 +325,7 @@ export const toggleFaculty = (req, res) => {
   const { id } = req.params;
 
   db.query(
-    `UPDATE users SET is_active = IF(is_active=1,0,1) WHERE id = ? AND role = 'FACULTY'`,
+    `UPDATE users SET is_active = NOT is_active WHERE id = $1 AND role = 'faculty'`,
     [id],
     (err, result) => {
       if (err) {
@@ -285,7 +333,7 @@ export const toggleFaculty = (req, res) => {
         return res.status(500).json({ message: "Database error" });
       }
 
-      if (result.affectedRows === 0) {
+      if (result.rowCount === 0) {
         return res.status(404).json({ message: "Faculty not found" });
       }
 
@@ -299,7 +347,7 @@ export const deleteFacultyPermanent = (req, res) => {
   const { id } = req.params;
 
   db.query(
-    "DELETE FROM users WHERE id = ? AND role = 'FACULTY'",
+    "DELETE FROM users WHERE id = $1 AND role = 'faculty'",
     [id],
     (err, result) => {
       if (err) {
@@ -307,7 +355,7 @@ export const deleteFacultyPermanent = (req, res) => {
         return res.status(500).json({ message: "Delete failed" });
       }
 
-      if (result.affectedRows === 0) {
+      if (result.rowCount === 0) {
         return res.status(404).json({ message: "Faculty not found" });
       }
 
@@ -332,20 +380,20 @@ export const getFacultyAllocation = (req, res) => {
       u.name AS faculty_name
     FROM rooms r
     LEFT JOIN faculty_allocation fa
-      ON r.id = fa.room_id AND fa.exam_id = ?
+      ON r.id = fa.room_id AND fa.exam_id = $1
     LEFT JOIN users u
       ON fa.faculty_id = u.id
-    WHERE r.is_active = 1
+    WHERE r.is_active = true
     ORDER BY r.room_name
   `;
 
-  db.query(sql, [examId], (err, rows) => {
+  db.query(sql, [examId], (err, result) => {
     if (err) {
       console.error("GET FACULTY ALLOCATION ERROR:", err);
       return res.status(500).json({ message: "Database error" });
     }
 
-    res.json(rows);
+    res.json(result.rows);
   });
 };
 
@@ -361,16 +409,18 @@ export const saveFacultyAllocation = (req, res) => {
   const checkSql = `
     SELECT room_id
     FROM faculty_allocation
-    WHERE exam_id = ? AND faculty_id = ? AND room_id != ?
+    WHERE exam_id = $1
+    AND faculty_id = $2
+      AND room_id != $3
   `;
 
-  db.query(checkSql, [exam_id, faculty_id, room_id], (err, rows) => {
+  db.query(checkSql, [exam_id, faculty_id, room_id], (err, result) => {
     if (err) {
       console.error("FACULTY CHECK ERROR:", err);
       return res.status(500).json({ message: "Database error" });
     }
 
-    if (rows.length > 0) {
+   if (result.rows.length > 0) {
       return res.status(400).json({
         message: "This faculty is already assigned to another room for this exam",
       });
@@ -379,11 +429,20 @@ export const saveFacultyAllocation = (req, res) => {
     // 2️⃣ Safe to insert / update
     const saveSql = `
       INSERT INTO faculty_allocation
-        (exam_id, room_id, faculty_id, allocated_date, status)
-      VALUES (?, ?, ?, CURDATE(), 'Assigned')
-      ON DUPLICATE KEY UPDATE
-        faculty_id = VALUES(faculty_id),
-        status = 'Assigned'
+(
+  exam_id,
+  room_id,
+  faculty_id,
+  allocated_date,
+  status
+)
+VALUES ($1, $2, $3, CURRENT_DATE, 'Assigned')
+
+ON CONFLICT (exam_id, room_id)
+
+DO UPDATE SET
+faculty_id = EXCLUDED.faculty_id,
+status = 'Assigned'
     `;
 
     db.query(saveSql, [exam_id, room_id, faculty_id], (err) => {
@@ -404,7 +463,7 @@ export const deleteFacultyAllocation = (req, res) => {
     return res.status(400).json({ message: "exam_id and room_id are required" });
   }
 
-  const sql = `DELETE FROM faculty_allocation WHERE exam_id = ? AND room_id = ?`;
+  const sql = `DELETE FROM faculty_allocation WHERE exam_id = $1 AND room_id = $2`;
   db.query(sql, [exam_id, room_id], (err) => {
     if (err) {
       console.error("DELETE FACULTY ALLOCATION ERROR:", err);
@@ -426,17 +485,17 @@ export const getFacultySemesterSeating = (req, res) => {
     FROM semester_seating_arrangements ssa
     JOIN users u ON u.id = ssa.student_id
     JOIN rooms r ON r.id = ssa.room_id
-    WHERE ssa.semester_slot_id = ?
+    WHERE ssa.semester_slot_id = $1
     ORDER BY ssa.seat_number
   `;
 
-  db.query(sql, [slotId], (err, rows) => {
+  db.query(sql, [slotId], (err, result) => {
     if (err) {
       console.error("Semester seating error:", err);
       return res.status(500).json({ message: "Failed to load seating" });
     }
 
-    res.json(rows);
+    res.json(result.rows);
   });
 };
 
@@ -449,12 +508,12 @@ export const autoAllocateFaculty = (examId) => {
       `
       SELECT id
       FROM users
-      WHERE role = 'FACULTY'
-        AND is_active = 1
+      WHERE role = 'faculty'
+          AND is_active = true
       ORDER BY id
       `,
       (err, faculty) => {
-        if (err || faculty.length === 0) {
+        if (err || faculty.rows.length === 0) {
           return reject("No faculty available");
         }
 
@@ -463,26 +522,28 @@ export const autoAllocateFaculty = (examId) => {
           `
           SELECT id
           FROM rooms
-          WHERE is_active = 1
+          WHERE is_active = true
           ORDER BY id
           `,
           (err, rooms) => {
-            if (err || rooms.length === 0) {
+            if (err || rooms.rows.length === 0) {
               return reject("No rooms available");
             }
 
             // 3️⃣ Remove old allocation for this exam
             db.query(
-              "DELETE FROM faculty_allocation WHERE exam_id = ?",
+              "DELETE FROM faculty_allocation WHERE exam_id = $1",
               [examId],
-              () => {
+              async () => {
                 const values = [];
                 let facultyIndex = 0;
 
                 // 4️⃣ Round-robin assignment
-                rooms.forEach(room => {
+                rooms.rows.forEach(room => {
                   const facultyMember =
-                    faculty[facultyIndex % faculty.length];
+                    faculty.rows[
+  facultyIndex % faculty.rows.length
+];
 
                   values.push([
                     examId,
@@ -496,20 +557,32 @@ export const autoAllocateFaculty = (examId) => {
                 });
 
                 // 5️⃣ Insert allocations
-                db.query(
-                  `
-                  INSERT INTO faculty_allocation
-                  (exam_id, room_id, faculty_id, allocated_date, status)
-                  VALUES ?
-                  `,
-                  [values],
-                  (err) => {
-                    if (err) {
-                      return reject("Faculty allocation failed");
-                    }
-                    resolve();
-                  }
-                );
+                try {
+
+  for (const value of values) {
+
+    await db.query(
+      `
+      INSERT INTO faculty_allocation
+      (
+        exam_id,
+        room_id,
+        faculty_id,
+        allocated_date,
+        status
+      )
+      VALUES ($1, $2, $3, $4, $5)
+      `,
+      value
+    );
+  }
+
+  resolve();
+
+} catch (err) {
+
+  reject("Faculty allocation failed");
+}
               }
             );
           }
