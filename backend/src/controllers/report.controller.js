@@ -2,14 +2,35 @@
 import db from "../db/db.js";
 import PDFDocument from "pdfkit";
 
-const logReportDownload = (req, reportType, examId = null) => {
+const logReportDownload = (
+  req,
+  reportType,
+  examId = null
+) => {
+
   const userId = req.user?.id || null;
 
+  const sql = `
+    INSERT INTO reports (
+      report_type,
+      exam_id,
+      downloaded_by,
+      created_at
+    )
+    VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+  `;
+
   db.query(
-    `INSERT INTO reports 
-     (report_type, exam_id, downloaded_by, created_at)
-     VALUES ($1, $2, $3, CURRENT_TIMESTAMP)`,
-    [reportType, examId, userId]
+    sql,
+    [reportType, examId, userId],
+    (err) => {
+      if (err) {
+        console.error(
+          "Report logging error:",
+          err
+        );
+      }
+    }
   );
 };
 
