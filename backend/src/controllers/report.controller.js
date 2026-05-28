@@ -1,38 +1,38 @@
-```javascript
 import db from "../db/db.js";
 import PDFDocument from "pdfkit";
 
 const logReportDownload = (
   req,
   reportType,
-  examId = null
+  examId = null,
+  format = "pdf"
 ) => {
-
   const userId = req.user?.id || null;
+  const userRole = req.user?.role || null;
 
   const sql = `
     INSERT INTO reports (
       report_type,
       exam_id,
-      downloaded_by,
+      generated_by,
+      role,
+      format,
       created_at
     )
-    VALUES ($1, $2, $3, CURRENT_TIMESTAMP)
+    VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
   `;
 
   db.query(
     sql,
-    [reportType, examId, userId],
+    [reportType, examId, userId, userRole, format],
     (err) => {
       if (err) {
-        console.error(
-          "Report logging error:",
-          err
-        );
+        console.error("Report logging error:", err);
       }
     }
   );
 };
+
 /* ================= GET DATE RANGE FILTER ================= */
 const getDateRangeFilter = (dateRange) => {
   const now = new Date();
@@ -68,7 +68,16 @@ const getDateRangeFilter = (dateRange) => {
 /* ================= GET ALL REPORTS ================= */
 export const getReports = (req, res) => {
   const sql = `
-    SELECT r.*, e.exam_name, e.exam_date
+    SELECT 
+      r.id,
+      r.report_type,
+      r.exam_id,
+      r.generated_by,
+      r.role,
+      r.format,
+      r.created_at,
+      e.exam_name,
+      e.exam_date
     FROM reports r
     LEFT JOIN exams e ON r.exam_id = e.id
     ORDER BY r.created_at DESC
@@ -76,6 +85,7 @@ export const getReports = (req, res) => {
 
   db.query(sql, (err, result) => {
     if (err) {
+      console.error("Get reports error:", err);
       return res.status(500).json({
         message: "Failed to load reports",
       });
@@ -89,7 +99,15 @@ export const getReports = (req, res) => {
 export const getRecentDownloads = (req, res) => {
   db.query(
     `
-    SELECT r.*, e.exam_name
+    SELECT 
+      r.id,
+      r.report_type,
+      r.exam_id,
+      r.generated_by,
+      r.role,
+      r.format,
+      r.created_at,
+      e.exam_name
     FROM reports r
     LEFT JOIN exams e ON r.exam_id = e.id
     ORDER BY r.created_at DESC
@@ -97,6 +115,7 @@ export const getRecentDownloads = (req, res) => {
     `,
     (err, result) => {
       if (err) {
+        console.error("Recent downloads error:", err);
         return res.status(500).json({
           message: "Failed to load recent downloads",
         });
@@ -124,7 +143,7 @@ export const downloadReport = (req, res) => {
     });
   }
 
-  logReportDownload(req, reportType, examId);
+  logReportDownload(req, reportType, examId, format);
 
   if (format === "excel") {
     return generateExcelReport(
@@ -839,7 +858,8 @@ export const printReport = (req, res) => {
   logReportDownload(
     req,
     reportType,
-    examId
+    examId,
+    "print"
   );
 
   const startDate = getDateRangeFilter(dateRange);
@@ -1147,4 +1167,3 @@ export const printReport = (req, res) => {
     }
   );
 };
-```
