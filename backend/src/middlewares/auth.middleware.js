@@ -12,14 +12,15 @@ export default function authMiddleware(req, res, next) {
     req.user = decoded;
 
     db.query(
-      "SELECT is_active FROM users WHERE id = ?",
+      "SELECT is_active FROM users WHERE id = $1",
       [decoded.id],
       (err, result) => {
-        if (err || result.length === 0) {
+        if (err || result.rows.length === 0) {
           return res.status(401).json({ message: "Unauthorized" });
         }
 
-        if (result[0].is_active === 0) {
+        // PostgreSQL stores is_active as BOOLEAN (true/false)
+        if (result.rows[0].is_active === false) {
           return res.status(403).json({ message: "Account deactivated" });
         }
 
